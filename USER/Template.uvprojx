@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\sys;..\SYSTEM\delay;..\SYSTEM\usart;..\OBJ;..\FreeRTOS-Kernel\portable\RVDS\ARM_CM3;..\FreeRTOS-Kernel\include;..\HARDWARE\LED;..\HARDWARE\OLED;..\HARDWARE\ATK_MS6050;..\HARDWARE\ATK_MS6050\eMPL</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\sys;..\SYSTEM\delay;..\SYSTEM\usart;..\OBJ;..\FreeRTOS-Kernel\portable\RVDS\ARM_CM3;..\FreeRTOS-Kernel\include;..\HARDWARE\LED;..\HARDWARE\OLED;..\HARDWARE\SENSOR;..\HARDWARE\ATK_MS6050;..\HARDWARE\ATK_MS6050\eMPL</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -388,6 +388,11 @@
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_env_monitor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\app_env_monitor.c</FilePath>
             </File>
             <File>
               <FileName>stm32f10x_it.c</FileName>
@@ -603,6 +608,21 @@
               <FileName>oled.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\HARDWARE\OLED\oled.c</FilePath>
+            </File>
+            <File>
+              <FileName>App_I2C.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\SENSOR\App_I2C.c</FilePath>
+            </File>
+            <File>
+              <FileName>AHT20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\SENSOR\AHT20.c</FilePath>
+            </File>
+            <File>
+              <FileName>BMP280.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\SENSOR\BMP280.c</FilePath>
             </File>
           </Files>
         </Group>
