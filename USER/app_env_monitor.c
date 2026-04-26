@@ -1,4 +1,4 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include "app_env_monitor.h"
@@ -24,14 +24,14 @@
 
 #define ENV_MONITOR_TIME_X         16u
 #define ENV_MONITOR_TIME_Y          4u
-#define ENV_MONITOR_LEFT_CELL_X     4u
-#define ENV_MONITOR_RIGHT_CELL_X   68u
+#define ENV_MONITOR_LEFT_CELL_X     1u
+#define ENV_MONITOR_RIGHT_CELL_X   65u
 #define ENV_MONITOR_TOP_CELL_Y     36u
 #define ENV_MONITOR_BOTTOM_CELL_Y  52u
 #define ENV_MONITOR_CELL_FONT       8u
 #define ENV_MONITOR_DIVIDER_X      64u
 #define ENV_MONITOR_TOP_LINE_Y     31u
-#define ENV_MONITOR_BOTTOM_LINE_Y  47u
+#define ENV_MONITOR_BOTTOM_LINE_Y  49u
 
 #define ENV_MONITOR_CMD_OK          0u
 #define ENV_MONITOR_CMD_ERR_FORMAT  1u
@@ -46,6 +46,41 @@ typedef enum
     ENV_PAGE_TEST_MODE,
     ENV_PAGE_INVALID = 255
 } EnvMonitorPage_t;
+
+typedef enum
+{
+    ENV_ZH_WEN = 0,
+    ENV_ZH_SHI = 1,
+    ENV_ZH_DU = 2,
+    ENV_ZH_QI = 3,
+    ENV_ZH_YA = 4,
+    ENV_ZH_GAO = 5,
+    ENV_ZH_DU_2 = 6,
+    ENV_ZH_CUO = 7,
+    ENV_ZH_WU_2 = 8,
+    ENV_ZH_FEN = 9,
+    ENV_ZH_DAO = 10,
+    ENV_ZH_JI = 11,
+    ENV_ZH_SHI_TIME = 12,
+    ENV_ZH_JIAN = 13,
+    ENV_ZH_DAO_REACHED = 14,
+    ENV_ZH_HUI = 15,
+    ENV_ZH_ZHU = 16,
+    ENV_ZH_YE = 17,
+    ENV_ZH_RI = 18,
+    ENV_ZH_LI = 19,
+    ENV_ZH_ZHOU = 20,
+    ENV_ZH_YI = 21,
+    ENV_ZH_ER = 22,
+    ENV_ZH_SAN = 23,
+    ENV_ZH_SI = 24,
+    ENV_ZH_WU = 25,
+    ENV_ZH_LIU = 26,
+    ENV_ZH_ZHONG = 27,
+    ENV_ZH_DAO_3 = 28,
+    ENV_ZH_JI_2 = 29,
+    ENV_ZH_SHI_2 = 30
+} EnvMonitorZhGlyph_t;
 
 typedef struct
 {
@@ -72,6 +107,7 @@ typedef struct
     uint8_t bmp280_status;
     uint8_t rtc_status;
     uint8_t mpu_status;
+    uint8_t oled_display_turn;
     char line[32];
 } EnvMonitorContext;
 
@@ -369,7 +405,7 @@ static void format_tagged_unsigned_1(char *buffer, const char *label, float valu
     sprintf(buffer, "%s%lu.%lu%s", label, scaled / 10UL, scaled % 10UL, unit);
 }
 
-static void format_pressure_cell(char *buffer, float pressure_pa)
+static void format_pressure_value(char *buffer, float pressure_pa)
 {
     unsigned long pressure_hpa;
 
@@ -379,7 +415,7 @@ static void format_pressure_cell(char *buffer, float pressure_pa)
     }
 
     pressure_hpa = (unsigned long)(pressure_pa / 100.0f + 0.5f);
-    sprintf(buffer, "P%luhPa", pressure_hpa);
+    sprintf(buffer, "%luhPa", pressure_hpa);
 }
 
 static float env_monitor_calc_altitude_m(float pressure_pa)
@@ -392,16 +428,79 @@ static float env_monitor_calc_altitude_m(float pressure_pa)
     return 44330.0f * (1.0f - powf(pressure_pa / ENV_MONITOR_SEA_LEVEL_PRESSURE_PA, 0.1903f));
 }
 
-static const char *env_monitor_weekday_text(uint8_t week)
+static uint8_t env_monitor_weekday_glyph(uint8_t week)
 {
-    static const char *weekday[8] = {"---", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"};
-
-    if (week > 7u)
+    switch (week)
     {
-        return weekday[0];
+    case 1u:
+        return ENV_ZH_YI;
+    case 2u:
+        return ENV_ZH_ER;
+    case 3u:
+        return ENV_ZH_SAN;
+    case 4u:
+        return ENV_ZH_SI;
+    case 5u:
+        return ENV_ZH_WU;
+    case 6u:
+        return ENV_ZH_LIU;
+    case 7u:
+    default:
+        return ENV_ZH_RI;
+    }
+}
+
+static void env_monitor_show_zh_glyph(uint8_t x, uint8_t y,uint8_t size, uint8_t glyph)
+{
+    OLED_ShowChinese(x, y, glyph, size, 1u);
+}
+
+static void env_monitor_show_zh_phrase(uint8_t x, uint8_t y, const uint8_t *glyphs, uint8_t len, uint8_t size)
+{
+    uint8_t i;
+
+    if (glyphs == 0)
+    {
+        return;
     }
 
-    return weekday[week];
+    for (i = 0u; i < len; i++)
+    {
+        env_monitor_show_zh_glyph((uint8_t)(x + i * size), y, size, glyphs[i]);
+    }
+}
+
+static uint8_t env_monitor_page_display_turn(EnvMonitorPage_t page)
+{
+    switch (page)
+    {
+    case ENV_PAGE_CALENDAR:
+    case ENV_PAGE_TEST_MODE:
+        return 1u;
+    case ENV_PAGE_HOME:
+    case ENV_PAGE_TIMER_30MIN:
+    default:
+        return 0u;
+    }
+}
+
+static void env_monitor_apply_display_turn(EnvMonitorContext *context)
+{
+    uint8_t display_turn;
+
+    if (context == 0)
+    {
+        return;
+    }
+
+    display_turn = env_monitor_page_display_turn(context->current_page);
+    if (context->oled_display_turn == display_turn)
+    {
+        return;
+    }
+
+    OLED_DisplayTurn(display_turn);
+    context->oled_display_turn = display_turn;
 }
 
 static const char *env_monitor_page_text(EnvMonitorPage_t page)
@@ -729,6 +828,15 @@ static uint8_t env_monitor_update_timer(EnvMonitorContext *context, TickType_t n
 
 static void env_monitor_render_homepage(EnvMonitorContext *context)
 {
+    static const uint8_t top_left_label[2] = {ENV_ZH_WEN, ENV_ZH_DU};
+    static const uint8_t top_right_label[2] = {ENV_ZH_SHI, ENV_ZH_DU};
+    static const uint8_t bottom_left_label[2] = {ENV_ZH_QI, ENV_ZH_YA};
+    static const uint8_t bottom_right_label[2] = {ENV_ZH_GAO, ENV_ZH_DU_2};
+    static const uint8_t top_left_error[2] = {ENV_ZH_WEN, ENV_ZH_CUO};
+    static const uint8_t top_right_error[2] = {ENV_ZH_SHI, ENV_ZH_CUO};
+    static const uint8_t bottom_left_error[2] = {ENV_ZH_YA, ENV_ZH_CUO};
+    static const uint8_t bottom_right_error[2] = {ENV_ZH_GAO, ENV_ZH_CUO};
+
     OLED_ClearBuffer();
 
     if ((context->rtc_ready != 0u) && (context->rtc_status == DS3231_OK))
@@ -747,30 +855,34 @@ static void env_monitor_render_homepage(EnvMonitorContext *context)
 
     if ((context->aht20_ready != 0u) && (context->aht20_status == AHT20_OK))
     {
-        format_tagged_signed_1(context->line, "T", context->aht20_data.temperature_c, "C");
-        OLED_ShowString(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_TOP_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_TOP_CELL_Y, top_left_label, 2u, 8u);
+        format_tagged_signed_1(context->line, "", context->aht20_data.temperature_c, "C");
+        OLED_ShowString((u8)(ENV_MONITOR_LEFT_CELL_X + 18u), ENV_MONITOR_TOP_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1u);
 
-        format_tagged_unsigned_1(context->line, "H", context->aht20_data.humidity_rh, "%");
-        OLED_ShowString(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_TOP_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_TOP_CELL_Y, top_right_label, 2u, 8u);
+        format_tagged_unsigned_1(context->line, "", context->aht20_data.humidity_rh, "%");
+        OLED_ShowString((u8)(ENV_MONITOR_RIGHT_CELL_X + 18u), ENV_MONITOR_TOP_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1u);
     }
     else
     {
-        OLED_ShowString(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_TOP_CELL_Y, (u8 *)"T ERR", ENV_MONITOR_CELL_FONT, 1);
-        OLED_ShowString(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_TOP_CELL_Y, (u8 *)"H ERR", ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_TOP_CELL_Y, top_left_error, 2u, 8u);
+        env_monitor_show_zh_phrase(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_TOP_CELL_Y, top_right_error, 2u, 8u);
     }
 
     if ((context->bmp280_ready != 0u) && (context->bmp280_status == BMP280_OK))
     {
-        format_pressure_cell(context->line, context->bmp280_data.pressure_pa);
-        OLED_ShowString(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, bottom_left_label, 2u, 8u);
+        format_pressure_value(context->line, context->bmp280_data.pressure_pa);
+        OLED_ShowString((u8)(ENV_MONITOR_LEFT_CELL_X + 18u), ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1u);
 
-        format_tagged_signed_1(context->line, "A", context->altitude_m, "m");
-        OLED_ShowString(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, bottom_right_label, 2u, 8u);
+        format_tagged_signed_1(context->line, "", context->altitude_m, "m");
+        OLED_ShowString((u8)(ENV_MONITOR_RIGHT_CELL_X + 18u), ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)context->line, ENV_MONITOR_CELL_FONT, 1u);
     }
     else
     {
-        OLED_ShowString(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)"P ERR", ENV_MONITOR_CELL_FONT, 1);
-        OLED_ShowString(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, (u8 *)"A ERR", ENV_MONITOR_CELL_FONT, 1);
+        env_monitor_show_zh_phrase(ENV_MONITOR_LEFT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, bottom_left_error, 2u, 8u);
+        env_monitor_show_zh_phrase(ENV_MONITOR_RIGHT_CELL_X, ENV_MONITOR_BOTTOM_CELL_Y, bottom_right_error, 2u, 8u);
     }
 
     OLED_Refresh();
@@ -778,19 +890,24 @@ static void env_monitor_render_homepage(EnvMonitorContext *context)
 
 static void env_monitor_render_timer_page(EnvMonitorContext *context)
 {
+    static const uint8_t timer_title[4] = {ENV_ZH_FEN, ENV_ZH_DAO, ENV_ZH_JI, ENV_ZH_SHI_TIME};
+    static const uint8_t timer_done[3] = {ENV_ZH_SHI_TIME, ENV_ZH_JIAN, ENV_ZH_DAO_REACHED};
+    static const uint8_t timer_home[3] = {ENV_ZH_HUI, ENV_ZH_ZHU, ENV_ZH_YE};
+
     OLED_ClearBuffer();
 
-    OLED_ShowString(20u, 0u, (u8 *)"30MIN COUNTDOWN", 12, 1);
+    OLED_ShowString(24u, 0u, (u8 *)"30", 16, 1);
+    env_monitor_show_zh_phrase(40u, 0u, timer_title, 4u, 16u);
     format_mm_ss(context->line, context->timer_remaining_seconds);
     OLED_ShowString(34u, 18u, (u8 *)context->line, 24, 1);
 
     if (context->timer_remaining_seconds == 0u)
     {
-        OLED_ShowString(40u, 50u, (u8 *)"TIME UP", 12, 1);
+        env_monitor_show_zh_phrase(40u, 48u, timer_done, 3u, 12u);
     }
     else
     {
-        OLED_ShowString(22u, 50u, (u8 *)"ROTATE BACK HOME", 8, 1);
+        env_monitor_show_zh_phrase(40u, 48u, timer_home, 3u, 12u);
     }
 
     OLED_Refresh();
@@ -798,25 +915,29 @@ static void env_monitor_render_timer_page(EnvMonitorContext *context)
 
 static void env_monitor_render_calendar_page(EnvMonitorContext *context)
 {
+    static const uint8_t calendar_title[2] = {ENV_ZH_RI, ENV_ZH_LI};
+    static const uint8_t rtc_error[3] = {ENV_ZH_SHI_TIME, ENV_ZH_ZHONG, ENV_ZH_CUO};
+
     OLED_ClearBuffer();
 
-    OLED_ShowString(34u, 0u, (u8 *)"CALENDAR", 12, 1);
+    env_monitor_show_zh_phrase(48u, 0u, calendar_title, 2u, 16u);
 
     if ((context->rtc_ready != 0u) && (context->rtc_status == DS3231_OK))
     {
         format_date_ymd(context->line, &context->rtc_time);
         OLED_ShowString(24u, 16u, (u8 *)context->line, 16, 1);
 
-        sprintf(context->line, "%s %02u:%02u:%02u",
-                env_monitor_weekday_text(context->rtc_time.week),
+        env_monitor_show_zh_glyph(20u, 40u, 12u, ENV_ZH_ZHOU);
+        env_monitor_show_zh_glyph(36u, 40u, 12u, env_monitor_weekday_glyph(context->rtc_time.week));
+        sprintf(context->line, "%02u:%02u:%02u",
                 (unsigned int)context->rtc_time.hour,
                 (unsigned int)context->rtc_time.min,
                 (unsigned int)context->rtc_time.sec);
-        OLED_ShowString(20u, 42u, (u8 *)context->line, 12, 1);
+        OLED_ShowString(56u, 42u, (u8 *)context->line, 12, 1);
     }
     else
     {
-        OLED_ShowString(36u, 20u, (u8 *)"RTC ERR", 16, 1);
+        env_monitor_show_zh_phrase(40u, 20u, rtc_error, 3u, 12u);
         OLED_ShowString(28u, 44u, (u8 *)"--:--:--", 12, 1);
     }
 
@@ -855,6 +976,8 @@ static void env_monitor_render_test_page(EnvMonitorContext *context)
 
 static void env_monitor_render_page(EnvMonitorContext *context)
 {
+    env_monitor_apply_display_turn(context);
+
     switch (context->current_page)
     {
     case ENV_PAGE_TIMER_30MIN:
@@ -952,6 +1075,7 @@ static void env_monitor_task(void *pvParameters)
     context.current_page = ENV_PAGE_HOME;
     context.candidate_page = ENV_PAGE_HOME;
     context.timer_remaining_seconds = ENV_MONITOR_TIMER_DURATION_S;
+    context.oled_display_turn = 0xFFu;
 
     OLED_Init();
     env_monitor_render_page(&context);
@@ -1014,3 +1138,4 @@ BaseType_t app_env_monitor_start(UBaseType_t priority)
                        priority,
                        NULL);
 }
+
