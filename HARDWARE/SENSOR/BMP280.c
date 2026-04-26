@@ -114,6 +114,9 @@ uint8_t BMP280_ReadData(BMP280_Data_t *data)
 
     if (data == 0) return BMP280_ERR_PARAM;
 
+    /* Re-sync the shared I2C2 controller before each sensor transaction. */
+    APP_I2C_Init();
+
     if (APP_I2C_ReadBytes(bmp280_addr, BMP280_REG_PRESS_MSB, raw, 6u)) return BMP280_ERR_I2C;
 
     adc_P = (int32_t)(((uint32_t)raw[0] << 12) | ((uint32_t)raw[1] << 4) | (raw[2] >> 4));

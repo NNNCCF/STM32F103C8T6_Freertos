@@ -61,6 +61,9 @@ uint8_t AHT20_ReadData(AHT20_Data_t *data)
 
     if (data == 0) return AHT20_ERR_PARAM;
 
+    /* Re-sync the shared I2C2 controller before each measurement read. */
+    APP_I2C_Init();
+
     if (AHT20_WriteCmd3(AHT20_CMD_MEASURE, 0x33u, 0x00u)) return AHT20_ERR_I2C;
 
     delay_ms(80);

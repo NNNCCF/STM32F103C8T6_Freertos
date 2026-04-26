@@ -624,6 +624,11 @@
               <FileType>1</FileType>
               <FilePath>..\HARDWARE\SENSOR\BMP280.c</FilePath>
             </File>
+            <File>
+              <FileName>DS3231.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\DS3231\DS3231.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>
