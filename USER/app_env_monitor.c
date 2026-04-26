@@ -27,9 +27,11 @@
 #define ENV_MONITOR_TIMER_RING_GAP              1u
 #define ENV_MONITOR_BUZZER_ON_MS              150U
 #define ENV_MONITOR_BUZZER_OFF_MS             150U
-#define ENV_MONITOR_SHAKE_STOP_THRESHOLD_G    1.2f
+#define ENV_MONITOR_SHAKE_STOP_THRESHOLD_G    1.8f
+#define ENV_MONITOR_HOME_INVERT_TOGGLE_G      2.00f
+#define ENV_MONITOR_HOME_INVERT_RELEASE_G     1.05f
 #define ENV_MONITOR_SEA_LEVEL_PRESSURE_PA  101325.0f
-#define ENV_MONITOR_ACCEL_AXIS_TRIGGER_G       0.90f
+#define ENV_MONITOR_ACCEL_AXIS_TRIGGER_G       0.80f
 #define ENV_MONITOR_ACCEL_CROSS_AXIS_MAX_G     0.35f
 
 #define ENV_MONITOR_TIME_X         16u
@@ -124,7 +126,10 @@ typedef struct
     uint8_t timer_alarm_active;
     uint8_t timer_alarm_dismissed;
     uint8_t buzzer_output_on;
+    uint8_t home_inverted;
+    uint8_t home_shake_latched;
     uint8_t oled_rotation;
+    uint8_t oled_inverted;
     char line[32];
 } EnvMonitorContext;
 
@@ -378,14 +383,6 @@ static void format_time_hms(char *buffer, const DS3231_Time_t *time)
             (unsigned int)time->sec);
 }
 
-static void format_date_ymd(char *buffer, const DS3231_Time_t *time)
-{
-    sprintf(buffer, "20%02u-%02u-%02u",
-            (unsigned int)time->year,
-            (unsigned int)time->month,
-            (unsigned int)time->day);
-}
-
 static void format_mm_ss(char *buffer, uint32_t total_seconds)
 {
     unsigned long minutes;
@@ -443,28 +440,6 @@ static float env_monitor_calc_altitude_m(float pressure_pa)
     }
 
     return 44330.0f * (1.0f - powf(pressure_pa / ENV_MONITOR_SEA_LEVEL_PRESSURE_PA, 0.1903f));
-}
-
-static uint8_t env_monitor_weekday_glyph(uint8_t week)
-{
-    switch (week)
-    {
-    case 1u:
-        return ENV_ZH_YI;
-    case 2u:
-        return ENV_ZH_ER;
-    case 3u:
-        return ENV_ZH_SAN;
-    case 4u:
-        return ENV_ZH_SI;
-    case 5u:
-        return ENV_ZH_WU;
-    case 6u:
-        return ENV_ZH_LIU;
-    case 7u:
-    default:
-        return ENV_ZH_RI;
-    }
 }
 
 static uint8_t env_monitor_calendar_column(uint8_t week)
@@ -549,6 +524,25 @@ static void env_monitor_apply_rotation(EnvMonitorContext *context)
 
     OLED_SetRotation(rotation);
     context->oled_rotation = rotation;
+}
+
+static void env_monitor_apply_color(EnvMonitorContext *context)
+{
+    uint8_t inverted;
+
+    if (context == 0)
+    {
+        return;
+    }
+
+    inverted = (uint8_t)((context->current_page == ENV_PAGE_HOME) && (context->home_inverted != 0u));
+    if (context->oled_inverted == inverted)
+    {
+        return;
+    }
+
+    OLED_ColorTurn(inverted);
+    context->oled_inverted = inverted;
 }
 
 static const char *env_monitor_page_text(EnvMonitorPage_t page)
@@ -709,6 +703,11 @@ static void env_monitor_switch_page(EnvMonitorContext *context, EnvMonitorPage_t
     if (new_page == ENV_PAGE_TEST_MODE)
     {
         context->last_test_render_tick = now_tick - pdMS_TO_TICKS(ENV_MONITOR_TEST_RENDER_PERIOD_MS);
+    }
+
+    if (new_page != ENV_PAGE_HOME)
+    {
+        context->home_shake_latched = 0u;
     }
 }
 
@@ -881,6 +880,7 @@ static uint8_t env_monitor_update_mpu(EnvMonitorContext *context, TickType_t now
     uint8_t previous_status;
     EnvMonitorPage_t previous_page;
     uint8_t dirty;
+    float accel_mag;
 
     previous_ready = context->mpu_ready;
     previous_status = context->mpu_status;
@@ -908,6 +908,29 @@ static uint8_t env_monitor_update_mpu(EnvMonitorContext *context, TickType_t now
     {
         context->last_test_render_tick = now_tick;
         dirty = 1u;
+    }
+
+    if ((context->mpu_ready != 0u) && (context->mpu_status == MPU6050_OK))
+    {
+        accel_mag = env_monitor_accel_magnitude_g(&context->mpu6050_data);
+
+        if (context->current_page == ENV_PAGE_HOME)
+        {
+            if ((context->home_shake_latched == 0u) && (accel_mag > ENV_MONITOR_HOME_INVERT_TOGGLE_G))
+            {
+                context->home_inverted = (uint8_t)!context->home_inverted;
+                context->home_shake_latched = 1u;
+                dirty = 1u;
+            }
+            else if ((context->home_shake_latched != 0u) && (accel_mag < ENV_MONITOR_HOME_INVERT_RELEASE_G))
+            {
+                context->home_shake_latched = 0u;
+            }
+        }
+        else
+        {
+            context->home_shake_latched = 0u;
+        }
     }
 
     if ((previous_ready != context->mpu_ready) || (previous_status != context->mpu_status))
@@ -1249,6 +1272,7 @@ static void env_monitor_render_test_page(EnvMonitorContext *context)
 static void env_monitor_render_page(EnvMonitorContext *context)
 {
     env_monitor_apply_rotation(context);
+    env_monitor_apply_color(context);
 
     switch (context->current_page)
     {
@@ -1348,6 +1372,7 @@ static void env_monitor_task(void *pvParameters)
     context.candidate_page = ENV_PAGE_HOME;
     context.timer_remaining_seconds = ENV_MONITOR_TIMER_DURATION_S;
     context.oled_rotation = 0xFFu;
+    context.oled_inverted = 0xFFu;
 
     OLED_Init();
     Buzzer_Init();
