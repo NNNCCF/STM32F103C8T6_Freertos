@@ -472,6 +472,7 @@ static void env_monitor_show_zh_phrase(uint8_t x, uint8_t y, const uint8_t *glyp
 
 static uint8_t env_monitor_page_display_turn(EnvMonitorPage_t page)
 {
+    /* SSD1306-class panel only supports normal and 180-degree scan flip here. */
     switch (page)
     {
     case ENV_PAGE_CALENDAR:
