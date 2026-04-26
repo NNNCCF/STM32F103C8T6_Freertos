@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\sys;..\SYSTEM\delay;..\SYSTEM\usart;..\OBJ;..\FreeRTOS-Kernel\portable\RVDS\ARM_CM3;..\FreeRTOS-Kernel\include;..\HARDWARE\LED;..\HARDWARE\OLED;..\HARDWARE\SENSOR;..\ATK_MS6050;..\ATK_MS6050\eMPL</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\sys;..\SYSTEM\delay;..\SYSTEM\usart;..\OBJ;..\FreeRTOS-Kernel\portable\RVDS\ARM_CM3;..\FreeRTOS-Kernel\include;..\HARDWARE\LED;..\HARDWARE\OLED;..\HARDWARE\SENSOR;..\HARDWARE\ATK_MS6050;..\HARDWARE\ATK_MS6050\eMPL</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -630,19 +630,24 @@
               <FilePath>..\HARDWARE\SENSOR\MPU6050.c</FilePath>
             </File>
             <File>
+              <FileName>DS3231.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\DS3231\DS3231.c</FilePath>
+            </File>
+            <File>
+              <FileName>Buzzer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\BUZZER\Buzzer.c</FilePath>
+            </File>
+            <File>
               <FileName>atk_ms6050.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\ATK_MS6050\atk_ms6050.c</FilePath>
+              <FilePath>..\HARDWARE\ATK_MS6050\atk_ms6050.c</FilePath>
             </File>
             <File>
               <FileName>atk_ms6050_iic.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\ATK_MS6050\atk_ms6050_iic.c</FilePath>
-            </File>
-            <File>
-              <FileName>DS3231.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\HARDWARE\DS3231\DS3231.c</FilePath>
+              <FilePath>..\HARDWARE\ATK_MS6050\atk_ms6050_iic.c</FilePath>
             </File>
           </Files>
         </Group>

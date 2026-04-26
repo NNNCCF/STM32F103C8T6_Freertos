@@ -37,25 +37,3 @@ void Buzzer_Toggle(void)
     }
 }
 
-void Buzzer_BeepMs(uint16_t ms)
-{
-    Buzzer_On();
-    Delay_ms(ms);
-    Buzzer_Off();
-}
-
-void Buzzer_BeepTimes(uint16_t on_ms, uint16_t off_ms, uint8_t times)
-{
-    uint8_t i;
-
-    for (i = 0u; i < times; i++)
-    {
-        Buzzer_On();
-        Delay_ms(on_ms);
-        Buzzer_Off();
-        if (i + 1u < times)
-        {
-            Delay_ms(off_ms);
-        }
-    }
-}

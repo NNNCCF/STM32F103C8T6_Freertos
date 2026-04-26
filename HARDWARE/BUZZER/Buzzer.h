@@ -11,7 +11,5 @@ void Buzzer_Init(void);
 void Buzzer_On(void);
 void Buzzer_Off(void);
 void Buzzer_Toggle(void);
-void Buzzer_BeepMs(uint16_t ms);
-void Buzzer_BeepTimes(uint16_t on_ms, uint16_t off_ms, uint8_t times);
 
 #endif

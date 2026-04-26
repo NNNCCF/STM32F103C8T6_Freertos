@@ -1,4 +1,4 @@
-﻿#include "oled.h"
+#include "oled.h"
 #include "oledfont.h"
 #include "delay.h"
 
@@ -12,6 +12,7 @@
 #define OLED_I2C_SPEED         400000u
 #define OLED_I2C_TIMEOUT       3000u
 #define OLED_DISPLAY_WIDTH     128u
+#define OLED_DISPLAY_HEIGHT     64u
 #define OLED_PAGE_COUNT        8u
 
 #define OLED_RES_Clr() GPIO_ResetBits(GPIOA, GPIO_Pin_2)
@@ -20,6 +21,7 @@
 u8 OLED_GRAM[144][8];
 
 static uint8_t oled_page_buffer[OLED_DISPLAY_WIDTH];
+static uint8_t oled_rotation = OLED_ROTATE_0;
 
 static uint8_t OLED_I2C_WaitEvent(uint32_t event)
 {
@@ -66,6 +68,62 @@ static uint8_t OLED_I2C_Write(uint8_t control, const uint8_t *data, uint16_t len
     return 0u;
 }
 
+static uint8_t OLED_GetLogicalWidthInternal(void)
+{
+    if ((oled_rotation == OLED_ROTATE_90) || (oled_rotation == OLED_ROTATE_270))
+    {
+        return OLED_DISPLAY_HEIGHT;
+    }
+
+    return OLED_DISPLAY_WIDTH;
+}
+
+static uint8_t OLED_GetLogicalHeightInternal(void)
+{
+    if ((oled_rotation == OLED_ROTATE_90) || (oled_rotation == OLED_ROTATE_270))
+    {
+        return OLED_DISPLAY_WIDTH;
+    }
+
+    return OLED_DISPLAY_HEIGHT;
+}
+
+static uint8_t OLED_MapPoint(uint8_t x, uint8_t y, uint8_t *mapped_x, uint8_t *mapped_y)
+{
+    if ((mapped_x == 0) || (mapped_y == 0))
+    {
+        return 1u;
+    }
+
+    if ((x >= OLED_GetLogicalWidthInternal()) || (y >= OLED_GetLogicalHeightInternal()))
+    {
+        return 1u;
+    }
+
+    switch (oled_rotation)
+    {
+    case OLED_ROTATE_90:
+        *mapped_x = (uint8_t)(OLED_DISPLAY_WIDTH - 1u - y);
+        *mapped_y = x;
+        break;
+    case OLED_ROTATE_180:
+        *mapped_x = (uint8_t)(OLED_DISPLAY_WIDTH - 1u - x);
+        *mapped_y = (uint8_t)(OLED_DISPLAY_HEIGHT - 1u - y);
+        break;
+    case OLED_ROTATE_270:
+        *mapped_x = y;
+        *mapped_y = (uint8_t)(OLED_DISPLAY_HEIGHT - 1u - x);
+        break;
+    case OLED_ROTATE_0:
+    default:
+        *mapped_x = x;
+        *mapped_y = y;
+        break;
+    }
+
+    return 0u;
+}
+
 void OLED_ColorTurn(u8 i)
 {
     if (i == 0u)
@@ -90,6 +148,22 @@ void OLED_DisplayTurn(u8 i)
         OLED_WR_Byte(0xC0u, OLED_CMD);
         OLED_WR_Byte(0xA0u, OLED_CMD);
     }
+}
+
+void OLED_SetRotation(u8 rotation)
+{
+    OLED_DisplayTurn(0u);
+    oled_rotation = (uint8_t)(rotation & 0x03u);
+}
+
+u8 OLED_GetWidth(void)
+{
+    return OLED_GetLogicalWidthInternal();
+}
+
+u8 OLED_GetHeight(void)
+{
+    return OLED_GetLogicalHeightInternal();
 }
 
 void OLED_WR_Byte(u8 dat, u8 mode)
@@ -163,22 +237,27 @@ void OLED_ClearPoint(u8 x, u8 y)
 
 void OLED_DrawPoint(u8 x, u8 y, u8 t)
 {
-    u8 i;
-    u8 m;
+    u8 mapped_x;
+    u8 mapped_y;
+    u8 page;
+    u8 bit;
     u8 n;
 
-    i = y / 8u;
-    m = y % 8u;
-    n = (u8)(1u << m);
+    if (OLED_MapPoint(x, y, &mapped_x, &mapped_y) != 0u)
+    {
+        return;
+    }
+
+    page = (u8)(mapped_y / 8u);
+    bit = (u8)(mapped_y % 8u);
+    n = (u8)(1u << bit);
     if (t)
     {
-        OLED_GRAM[x][i] |= n;
+        OLED_GRAM[mapped_x][page] |= n;
     }
     else
     {
-        OLED_GRAM[x][i] = (u8)(~OLED_GRAM[x][i]);
-        OLED_GRAM[x][i] |= n;
-        OLED_GRAM[x][i] = (u8)(~OLED_GRAM[x][i]);
+        OLED_GRAM[mapped_x][page] &= (u8)(~n);
     }
 }
 
@@ -253,7 +332,7 @@ void OLED_DrawLine(u8 x1, u8 y1, u8 x2, u8 y2, u8 mode)
     }
 }
 
-void OLED_DrawCircle(u8 x, u8 y, u8 r)
+void OLED_DrawCircle(u8 x, u8 y, u8 r, u8 width)
 {
     int a;
     int b;
@@ -263,15 +342,15 @@ void OLED_DrawCircle(u8 x, u8 y, u8 r)
     b = r;
     while (2 * b * b >= r * r)
     {
-        OLED_DrawPoint((u8)(x + a), (u8)(y - b), 1u);
-        OLED_DrawPoint((u8)(x - a), (u8)(y - b), 1u);
-        OLED_DrawPoint((u8)(x - a), (u8)(y + b), 1u);
-        OLED_DrawPoint((u8)(x + a), (u8)(y + b), 1u);
+        OLED_DrawPoint((u8)(x + a), (u8)(y - b), 1);
+        OLED_DrawPoint((u8)(x - a), (u8)(y - b), 1);
+        OLED_DrawPoint((u8)(x - a), (u8)(y + b), 1);
+        OLED_DrawPoint((u8)(x + a), (u8)(y + b), 1);
 
-        OLED_DrawPoint((u8)(x + b), (u8)(y + a), 1u);
-        OLED_DrawPoint((u8)(x + b), (u8)(y - a), 1u);
-        OLED_DrawPoint((u8)(x - b), (u8)(y - a), 1u);
-        OLED_DrawPoint((u8)(x - b), (u8)(y + a), 1u);
+        OLED_DrawPoint((u8)(x + b), (u8)(y + a), 1);
+        OLED_DrawPoint((u8)(x + b), (u8)(y - a), 1);
+        OLED_DrawPoint((u8)(x - b), (u8)(y - a), 1);
+        OLED_DrawPoint((u8)(x - b), (u8)(y + a), 1);
 
         a++;
         num = (a * a + b * b) - r * r;
@@ -624,6 +703,7 @@ void OLED_Init(void)
     OLED_WR_Byte(0x12u, OLED_CMD);
     OLED_WR_Byte(0xDBu, OLED_CMD);
     OLED_WR_Byte(0x40u, OLED_CMD);
+    oled_rotation = OLED_ROTATE_0;
     OLED_Clear();
     OLED_WR_Byte(0xAFu, OLED_CMD);
 }
