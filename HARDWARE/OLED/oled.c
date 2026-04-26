@@ -422,21 +422,29 @@ void OLED_ShowChinese(u8 x, u8 y, u8 num, u8 size1, u8 mode)
     size3 = (u16)((size1 / 8u + ((size1 % 8u) ? 1u : 0u)) * size1);
     for (i = 0u; i < size3; i++)
     {
-        if (size1 == 16u)
+        if (size1 == 8u)
         {
-            temp = Hzk1[num][i];
+            temp = Chinese8x8[num][i];
+        }
+        else if (size1 == 12u)
+        {
+            temp = Chinese12x12[num][i];
+        }
+        else if (size1 == 16u)
+        {
+            temp = Chinese16x16[num][i];
         }
         else if (size1 == 24u)
         {
-            temp = Hzk2[num][i];
+            temp = Chinese24x24[num][i];
         }
         else if (size1 == 32u)
         {
-            temp = Hzk3[num][i];
+            temp = Chinese32x32[num][i];
         }
         else if (size1 == 64u)
         {
-            temp = Hzk4[num][i];
+            temp = Chinese64x64[num][i];
         }
         else
         {
