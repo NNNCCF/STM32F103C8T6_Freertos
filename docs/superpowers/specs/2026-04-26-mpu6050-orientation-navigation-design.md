@@ -5,218 +5,225 @@ Status: approved in chat
 
 ## Goal
 
-Add an `MPU6050` driver and use static device orientation to switch application pages.
+Switch application pages using stable `MPU6050` accelerometer orientation only.
 
 Target outcome:
 
-- read `MPU6050` acceleration data reliably
-- treat the normal flat, upright placement as the default home orientation
-- switch pages based on stable static orientation rather than rotation gestures
-- avoid false triggers with stability timing and cooldown rules
-- keep the design lightweight by not requiring DMP for the first version
+- keep `HOME`, `TIMER_30MIN`, `CALENDAR`, and `TEST_MODE`
+- stop using integrated `yaw` for page switching
+- avoid page drift while the board is stationary
+- keep the interaction based on four clear placements
+- preserve the existing timer-page behavior when entering `TIMER_30MIN`
 
-## User Interaction Model
+## Root Cause And Direction Change
 
-The device is used as an orientation-controlled navigator.
+The earlier orientation-navigation version relied on gyroscope integration to derive `yaw`.
+That produced the exact failure the user reported: the board could remain still while the displayed angle kept changing, which then made page state unstable.
 
-Page mapping:
+The user confirmed that the accelerometer readings are much more trustworthy for this product and that the intended interaction is not free-angle navigation. It is a four-position page selector.
 
-- normal flat upright placement:
+Therefore the approved design changes from:
+
+- gyro-based continuous heading
+
+to:
+
+- accelerometer-based discrete page classification
+
+This design intentionally treats gyroscope drift as irrelevant for page routing by removing it from the decision path.
+
+## User-Confirmed Orientation Mapping
+
+The page mapping is fixed to the current sensor mounting and the user-confirmed measured directions:
+
+- `ax ~= +1g`
   - `HOME`
-- clockwise 90 degrees:
+- `ay ~= +1g`
   - `TIMER_30MIN`
-- upside down 180 degrees:
+- `ax ~= -1g`
   - `CALENDAR`
-- counterclockwise 90 degrees:
+- `ay ~= -1g`
   - `TEST_MODE`
 
-The agreed interaction style is:
+Interpretation:
 
-- static orientation based
-- not gesture based
-- the target page changes only after the device remains stable in that orientation long enough
+- this mapping is already validated against the current board orientation
+- implementation must use these exact axis/sign relationships unless the hardware is rewired later
 
-## Current Project Context
+## Driver And Data Source
 
-The current project already has:
+The user explicitly requested the project use the root-level `ATK_MS6050` driver.
 
-- a FreeRTOS application task in `USER/app_env_monitor.c`
-- an OLED home page driven by that task
-- a shared hardware-I2C sensor helper in `HARDWARE/SENSOR/App_I2C.*`
-- AHT20 and BMP280 sensor drivers using that helper
-- no active `MPU6050` source files in the repository at the moment
+Recommended integration path:
 
-The Keil project still contains old include-path traces for `ATK_MS6050`, but the actual driver sources are not present. This means the cleanest approach is to add a small fresh `MPU6050` driver that matches the existing sensor-driver style instead of reviving the older DMP package.
+1. keep `ATK_MS6050/*` as the actual low-level sensor driver
+2. keep `HARDWARE/SENSOR/MPU6050.h` as the project-facing API already used by `USER/app_env_monitor.c`
+3. implement `HARDWARE/SENSOR/MPU6050.c` as a thin compatibility wrapper around `ATK_MS6050`
 
-## Recommended Approach
+This keeps application code stable while changing the sensor backend to the user-provided known-good driver.
 
-Three possible approaches:
+## Bus And Wiring Constraint
 
-1. Recommended: basic MPU6050 driver + accelerometer-based orientation classifier
-   - fastest path to a stable page-navigation feature
-   - no DMP dependency
-   - enough for static orientation control
+Important existing constraint:
 
-2. Basic driver + accel/gyro fusion
-   - more robust under motion
-   - more code and tuning effort
+- `HARDWARE/SENSOR/App_I2C.*` already uses `PB10/PB11` for AHT20, BMP280, and DS3231
+- the copied `ATK_MS6050` package also defaults to `PB10/PB11`
 
-3. DMP-based attitude angles
-   - richest data
-   - much heavier integration burden than this interaction needs
+To avoid breaking the other sensors, the approved direction is:
 
-Recommendation:
+- keep the existing environment-sensor bus unchanged
+- retarget the `ATK_MS6050` software-I2C pins to the dedicated `MPU6050` wiring already used in this project
 
-- implement a basic `MPU6050` driver first
-- use accelerometer gravity direction for page selection
-- leave DMP as a future enhancement if needed later
+The exact pin text shown to the user in OLED or UART messages must match the final retargeted mapping after implementation.
 
-## Sensor Strategy
+## Orientation Classification Rules
 
-The first version only needs accelerometer data for page routing.
+Page switching uses only converted acceleration values from `MPU6050_ReadData()`:
 
-Driver scope:
+- `accel_x_g`
+- `accel_y_g`
+- `accel_z_g`
 
-- device identity check using `WHO_AM_I`
-- wake-up and configuration
-- raw accelerometer readout
-- raw gyro and temperature read helpers may be exposed for completeness, but they are not required for the initial page-routing logic
-
-Configuration target:
-
-- accelerometer full scale: `+-2g`
-- gyroscope full scale: conservative default such as `+-500 dps`
-- low-pass filter and sample rate set to stable default values
-
-## Bus And Wiring Assumption
-
-Initial implementation should follow the existing sensor-driver style and target `HARDWARE/SENSOR/App_I2C.*`.
-
-Assumption for the first version:
-
-- `MPU6050` uses the same helper pattern as the other sensors
-- the first implementation targets the shared sensor bus helper on `I2C2(PB10/PB11)`
-
-Important note:
-
-- this design assumes the final hardware can place `MPU6050` on that sensor bus
-- if the final board wiring cannot share `PB10/PB11`, only the low-level transport should change; the higher-level orientation classifier and page-state machine should remain untouched
-
-The first version does not require an interrupt pin because it uses polling rather than DMP/FIFO interrupt handling.
-
-## Orientation Classification
-
-The classifier should only accept orientation changes when the device is still flat enough for gravity-based interpretation.
-
-Orientation gating:
-
-- `az` must stay strongly positive to confirm the screen is facing upward
-- if the board is tilted too far out of plane, keep the current page instead of forcing a new classification
-
-Initial thresholds:
-
-- flat-screen-up gate:
-  - `az > 0.75g`
-- horizontal orientation confidence:
-  - use `ax` and `ay` signs and magnitude once the flat gate is satisfied
-- page-direction threshold:
-  - dominant in-plane axis should exceed about `0.60g`
-
-Nominal direction rules:
+Approved rules:
 
 - `HOME`
-  - upright baseline orientation
+  - `accel_x_g >= +0.90f`
+  - `fabs(accel_y_g) <= 0.35f`
 - `TIMER_30MIN`
-  - right-side dominant orientation
+  - `accel_y_g >= +0.90f`
+  - `fabs(accel_x_g) <= 0.35f`
 - `CALENDAR`
-  - inverted orientation relative to home
+  - `accel_x_g <= -0.90f`
+  - `fabs(accel_y_g) <= 0.35f`
 - `TEST_MODE`
-  - left-side dominant orientation
+  - `accel_y_g <= -0.90f`
+  - `fabs(accel_x_g) <= 0.35f`
 
-The exact sign mapping for `ax` and `ay` depends on the final mounting direction of the sensor on the board. The implementation must isolate this mapping into one conversion function so it can be corrected with minimal code changes if physical axis direction differs from the expected board orientation.
+If none of the four rules match:
+
+- do not switch pages
+- keep the current page
+- treat the pose as in-transition or ambiguous
+
+This keeps the classifier intentionally strict so diagonal or half-rotated placements do not cause flicker.
 
 ## Stability And Cooldown
 
-The page router must not react instantly to transient movement.
+The page router still needs debouncing, but it no longer needs angle smoothing.
 
-Use these rules:
+Approved timing:
 
-- candidate page must remain unchanged for about `600-800 ms`
-- after a confirmed page switch, apply about `1000 ms` cooldown before another switch
-- when readings fall into an ambiguous threshold zone, keep the current page
+- candidate page stable time: about `200 ms`
+- switch cooldown time: about `300 ms`
 
-This gives a stable appliance-like interaction instead of a twitchy motion-controlled interface.
+Behavior:
+
+- a page candidate must remain unchanged for the full stable window before it is accepted
+- after a real page switch, ignore further switches until the cooldown window expires
+- if the pose becomes ambiguous, keep the current page and clear the current candidate
+
+The `TIMER_30MIN` page keeps its current semantics:
+
+- only when the page is actually entered should the 30-minute countdown restart
 
 ## Application Architecture
 
-Keep `USER/main.c` thin.
+Keep the feature centered in `USER/app_env_monitor.c`.
 
-Add a small MPU6050 module and integrate orientation handling into the application task layer.
+Responsibilities after the redesign:
 
-Proposed responsibilities:
-
-1. `HARDWARE/SENSOR/MPU6050.*`
-   - low-level device driver
+1. `ATK_MS6050/*`
+   - low-level device communication
    - initialization
-   - raw data reads
+   - raw accel/gyro/temp reads
 
-2. `USER/app_env_monitor.c`
-   - orientation classification
-   - stability timer and cooldown logic
-   - current page state
+2. `HARDWARE/SENSOR/MPU6050.*`
+   - project-facing wrapper API
+   - data conversion into `MPU6050_Data_t`
+   - error-code mapping
+
+3. `USER/app_env_monitor.c`
+   - page classification from accelerometer values
+   - stability and cooldown timing
+   - timer-page state
    - page rendering dispatch
 
-3. page renderers
-   - `HOME`
-   - `TIMER_30MIN`
-   - `CALENDAR`
-   - `TEST_MODE`
+## Logic To Remove
 
-The first version can keep all routing logic in `app_env_monitor.c` if that stays manageable, but the orientation classifier should be kept in focused helper functions so the file does not become unreadable.
+The following page-switching logic is no longer part of the approved design:
+
+- `yaw_deg` as the routing source
+- gyroscope Z bias calibration for page routing
+- `gyro_z_dps` deadband logic for page routing
+- angle normalization and angle-target snapping
+- any page classifier based on `0 / 90 / 180 / -90` heading buckets
+
+These parts should be removed or left only where strictly needed for compatibility, but they must not influence current-page selection.
+
+## Test Page And UART Output
+
+The test page remains available for sensor bring-up, but it should focus on acceleration rather than heading.
+
+Approved direction:
+
+- keep a compact engineer-facing test page
+- show `AX`, `AY`, and `AZ`
+- do not depend on `Y` or `GZ` for normal page routing
+
+UART logging should also stop presenting `yaw` as the primary navigation value.
+It may log:
+
+- current page name
+- `AX / AY / AZ`
+- `MPU` error status when reads fail
 
 ## Error Handling
 
-Expected failure surfaces:
+Expected failure cases:
 
-- `MPU6050` not detected
-- I2C read failure
-- unstable or ambiguous orientation
+- `ATK_MS6050` init failure
+- device ID mismatch
+- runtime read failure
+- ambiguous pose that matches no approved page
 
-Handling approach:
+Required behavior:
 
-- if `MPU6050` init fails, stay on the current default page and print a UART error
-- if runtime reads fail, keep the last confirmed page
-- ambiguous orientations should never trigger a page switch
-
-## Testing Plan
-
-Validation should cover both the driver and the navigation behavior:
-
-1. Build validation
-   - Keil rebuild succeeds with the new driver
-
-2. Driver validation
-   - `WHO_AM_I` passes
-   - raw accel values change consistently when the board is rotated
-
-3. Orientation validation
-   - flat upright position enters `HOME`
-   - 90-degree clockwise position enters `TIMER_30MIN`
-   - 180-degree inverted position enters `CALENDAR`
-   - 90-degree counterclockwise position enters `TEST_MODE`
-
-4. Stability validation
-   - brief movement does not cause page flutter
-   - repeated small shakes near thresholds do not trigger repeated page switches
-
-5. Failure validation
-   - unplugged or failing MPU6050 leaves the application on a safe page and reports the issue on UART
+- on init or read failure, keep the current safe page instead of forcing a switch
+- continue reporting `MPU ERR` for diagnosis
+- ambiguous orientation must not be treated as an error; it simply means "do not change page"
 
 ## Non-Goals
 
 This design does not aim to:
 
-- add DMP in the first implementation
+- compute precise Euler angles
+- keep continuous `yaw` for navigation
 - recognize dynamic gestures
-- derive precise Euler angles for display
-- require an interrupt-driven MPU6050 pipeline
+- make page switching depend on gyroscope drift correction
+- redesign unrelated OLED, RTC, AHT20, or BMP280 behavior
+
+## Testing Plan
+
+1. Driver validation
+   - `ATK_MS6050` initializes successfully through the project wrapper
+   - `WHO_AM_I` passes on the current board
+   - accel readings update sensibly while the board is reoriented
+
+2. Page-mapping validation
+   - `ax ~= +1g` enters `HOME`
+   - `ay ~= +1g` enters `TIMER_30MIN`
+   - `ax ~= -1g` enters `CALENDAR`
+   - `ay ~= -1g` enters `TEST_MODE`
+
+3. Stability validation
+   - slight hand shake near a target pose does not cause repeated switching
+   - diagonal placement does not trigger false page changes
+   - stationary placement does not drift across pages over time
+
+4. Timer validation
+   - entering `TIMER_30MIN` resets the countdown once
+   - remaining on that pose does not repeatedly restart the timer
+
+5. Failure validation
+   - disconnected or unreadable MPU keeps the app on a safe page
+   - OLED and UART still report `MPU` failure clearly
